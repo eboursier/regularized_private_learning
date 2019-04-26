@@ -25,6 +25,13 @@ torch.manual_seed(manual_seed)
 nexp = 10
 cost = sinkhorn._linear_cost
 
+dev = "cpu"
+if dev=="gpu":
+	device = torch.device("cuda:0")
+	print('Device {}'.format(device))
+else:
+	print('Device {}'.format(dev))
+
 os.system('mkdir experiments/type_data_K{0}_dim{1}'.format(K, dim))
 
 # Sinkhorn tuning
@@ -52,16 +59,22 @@ for s in itertools.product(sinkiterrange, sinklrrange):
 		sinkiter = s[0]
 		sinklr = s[1]
 
-		p = os.path.isfile('experiments/{0}_lamb{1}_k{2}_dim{3}_sinkiter{4}_lr{5}_sinkhorn/losses.npy'.format(exp+1, lamb, K, dim, sinkiter, sinklr))
+		p = os.path.isfile('experiments/sinkhorn/{0}_lamb{1}_k{2}_dim{3}_sinkiter{4}_lr{5}_sinkhorn_{6}/losses.npy'.format(exp+1, lamb, K, dim, sinkiter, sinklr, dev))
 
 		if not(p):
 			# train if not already done for these parameters
 			net = SinkhornNet(K+2, dim)
+
+			if gpu:
+				net.to(device)
+				y.to(device)
+				beta.to(device)
+
 			net.apply(init_weights)
 			if net.proj:
 				net.projection()
 			train.train_sinkhorn(net, y, beta, lamb=lamb, niter_sink=sinkiter, learning_rate=sinklr, cost=cost, max_iter=sinkmaxiter, experiment=exp+1,
-								verbose=False, err_threshold=1e-3)
+								verbose=False, err_threshold=1e-3, device=dev)
 
 
 # Descent training
@@ -73,14 +86,20 @@ for descentlr in descentlrrange:
 		y = torch.from_numpy(np.load('experiments/type_data_K{0}_dim{1}/y_{2}.npy'.format(K, dim, exp+1)))
 		beta = torch.from_numpy(np.load('experiments/type_data_K{0}_dim{1}/beta_{2}.npy'.format(K, dim, exp+1)))
 
-		p = os.path.isfile('experiments/{0}_lamb{1}_k{2}_dim{3}_lr{4}_descent/losses.npy'.format(exp+1,lamb,K, dim, descentlr))
+		p = os.path.isfile('experiments/descent/{0}_lamb{1}_k{2}_dim{3}_lr{4}_descent_{6}/losses.npy'.format(exp+1,lamb,K, dim, descentlr, dev))
 		if not(p):
 			## Descent experiment
 			net = DescentNet(K+2, dim, K, beta)
+
+			if gpu:
+				net.to(device)
+				y.to(device)
+				beta.to(device)
+
 			net.apply(init_weights)
 			if net.proj:
 				net.projection()
-			train.train_descent(net, y, beta, lamb=lamb, learning_rate=descentlr, cost=cost, max_iter=descentmaxiter, verbose=False, experiment=exp+1)
+			train.train_descent(net, y, beta, lamb=lamb, learning_rate=descentlr, cost=cost, max_iter=descentmaxiter, verbose=False, experiment=exp+1, device=dev)
 
 
 # DC training
@@ -97,11 +116,17 @@ for s in itertools.product(dcdualiterrange, dclrrange):
 		dcdualiter = s[0]
 		dclr = s[1]
 
-		p = os.path.isfile('experiments/{0}_lamb{1}_k{2}_dim{3}_dualiter{4}_lr{5}_dc/losses.npy'.format(exp+1, lamb, K, dim, dcdualiter, dclr))
+		p = os.path.isfile('experiments/dc/{0}_lamb{1}_k{2}_dim{3}_dualiter{4}_lr{5}_dc_{6}/losses.npy'.format(exp+1, lamb, K, dim, dcdualiter, dclr, dev))
 
 		if not(p):
 			## DC experiment
 			net = DCNet(K+2, dim, y)
+
+			if gpu:
+				net.to(device)
+				y.to(device)
+				beta.to(device)
+
 			net.apply(init_weights)
 			if net.proj:
 				net.projection()

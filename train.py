@@ -36,13 +36,13 @@ def simplex_proj(x, p=1):
     return F.relu(x - theta)
 
 def train_sinkhorn(net, y, beta, lamb = 1, niter_sink = 1, max_iter=1000, cost=sinkhorn._squared_distances,
-            learning_rate=0.1, err_threshold=1e-4, experiment=0, verbose=False, verbose_freq=100, **kwargs):
+            learning_rate=0.1, err_threshold=1e-4, experiment=0, verbose=False, verbose_freq=100, device="cpu", **kwargs):
     """
     learn a discrete distribution (alpha, x) with a prior (beta, y)
     """
 
     if experiment!=0:
-        os.system('mkdir experiments/{0}_lamb{1}_k{2}_dim{3}_sinkiter{4}_lr{5}_sinkhorn'.format(experiment,lamb,y.size(0), y.size(1), niter_sink, learning_rate))
+        os.system('mkdir experiments/sinkhorn/{0}_lamb{1}_k{2}_dim{3}_sinkiter{4}_lr{5}_sinkhorn_{6}'.format(experiment,lamb,y.size(0), y.size(1), niter_sink, learning_rate, device))
 
      # load network
     #net = Net(network)
@@ -99,19 +99,22 @@ def train_sinkhorn(net, y, beta, lamb = 1, niter_sink = 1, max_iter=1000, cost=s
         print('total running time: {0} s'.format(running_time))
     if experiment!=0:
         # save data
-        torch.save(net, 'experiments/{0}_lamb{1}_k{2}_dim{3}_sinkiter{4}_lr{5}_sinkhorn/network'.format(experiment,lamb,y.size(0), y.size(1), niter_sink, learning_rate))
-        np.save('experiments/{0}_lamb{1}_k{2}_dim{3}_sinkiter{4}_lr{5}_sinkhorn/losses.npy'.format(experiment,lamb,y.size(0), y.size(1), niter_sink, learning_rate), loss_profile)
-        np.save('experiments/{0}_lamb{1}_k{2}_dim{3}_sinkiter{4}_lr{5}_sinkhorn/time.npy'.format(experiment,lamb,y.size(0), y.size(1), niter_sink, learning_rate), time_profile)
+        torch.save(net, 'experiments/sinkhorn/{0}_lamb{1}_k{2}_dim{3}_sinkiter{4}_lr{5}_sinkhorn_{6}/network'.format(experiment,lamb,y.size(0), y.size(1), 
+                                                                                                                        niter_sink, learning_rate, device))
+        np.save('experiments/sinkhorn/{0}_lamb{1}_k{2}_dim{3}_sinkiter{4}_lr{5}_sinkhorn_{6}/losses.npy'.format(experiment,lamb,y.size(0), y.size(1), niter_sink, 
+                                                                                                                    learning_rate, device), loss_profile)
+        np.save('experiments/sinkhorn/{0}_lamb{1}_k{2}_dim{3}_sinkiter{4}_lr{5}_sinkhorn_{6}/time.npy'.format(experiment,lamb,y.size(0), y.size(1), niter_sink, 
+                                                                                                                learning_rate, device), time_profile)
     return loss_profile
 
 def train_descent(net, y, beta, lamb = 1, max_iter=1000, cost=sinkhorn._squared_distances,
-                learning_rate=0.1, experiment=0, verbose=False, verbose_freq=100, **kwargs):
+                learning_rate=0.1, experiment=0, verbose=False, verbose_freq=100, device="cpu",  **kwargs):
     """
     learn a discrete distribution (alpha, x) with a prior (beta, y)
     """
 
     if experiment!=0:
-        os.system('mkdir experiments/{0}_lamb{1}_k{2}_dim{3}_lr{4}_descent'.format(experiment,lamb,y.size(0), y.size(1), learning_rate))
+        os.system('mkdir experiments/descent/{0}_lamb{1}_k{2}_dim{3}_lr{4}_descent_{5}'.format(experiment,lamb,y.size(0), y.size(1), learning_rate, device))
 
      # load network
     #net = Net(network)
@@ -163,19 +166,19 @@ def train_descent(net, y, beta, lamb = 1, max_iter=1000, cost=sinkhorn._squared_
         print('total running time: {0} s'.format(running_time))
     if experiment!=0:
         # save data
-        torch.save(net, 'experiments/{0}_lamb{1}_k{2}_dim{3}_lr{4}_descent/network'.format(experiment,lamb,y.size(0), y.size(1), learning_rate))
-        np.save('experiments/{0}_lamb{1}_k{2}_dim{3}_lr{4}_descent/losses.npy'.format(experiment,lamb,y.size(0), y.size(1), learning_rate), loss_profile)
-        np.save('experiments/{0}_lamb{1}_k{2}_dim{3}_lr{4}_descent/time.npy'.format(experiment,lamb,y.size(0), y.size(1), learning_rate), time_profile)
+        torch.save(net, 'experiments/descent/{0}_lamb{1}_k{2}_dim{3}_lr{4}_descent_{5}/network'.format(experiment,lamb,y.size(0), y.size(1), learning_rate, device))
+        np.save('experiments/descent/{0}_lamb{1}_k{2}_dim{3}_lr{4}_descent_{5}/losses.npy'.format(experiment,lamb,y.size(0), y.size(1), learning_rate, device), loss_profile)
+        np.save('experiments/descent/{0}_lamb{1}_k{2}_dim{3}_lr{4}_descent_{5}/time.npy'.format(experiment,lamb,y.size(0), y.size(1), learning_rate, device), time_profile)
     return loss_profile
 
 def train_dc(net, y, beta, lamb = 1, max_iter=1000, cost=sinkhorn._squared_distances, err_threshold=1e-4, dual_iter=100, debug=False,
-            learning_rate=0.01, experiment=0, verbose=False, verbose_freq=100, **kwargs):
+            learning_rate=0.01, experiment=0, verbose=False, verbose_freq=100, device="cpu", **kwargs):
     """
     learn a discrete distribution (alpha, x) with a prior (beta, y)
     """
 
     if experiment!=0:
-        os.system('mkdir experiments/{0}_lamb{1}_k{2}_dim{3}_dualiter{4}_lr{5}_dc'.format(experiment,lamb,y.size(0), y.size(1), dual_iter, learning_rate))
+        os.system('mkdir experiments/dc/{0}_lamb{1}_k{2}_dim{3}_dualiter{4}_lr{5}_dc_{6}'.format(experiment,lamb,y.size(0), y.size(1), dual_iter, learning_rate, device))
 
      # load network
     #net = Net(network)
@@ -219,9 +222,9 @@ def train_dc(net, y, beta, lamb = 1, max_iter=1000, cost=sinkhorn._squared_dista
         print('total running time: {0} s'.format(running_time))
     if experiment!=0:
         # save data
-        torch.save(net, 'experiments/{0}_lamb{1}_k{2}_dim{3}_dualiter{4}_lr{5}_dc/network'.format(experiment,lamb,y.size(0), y.size(1), dual_iter, learning_rate))
-        np.save('experiments/{0}_lamb{1}_k{2}_dim{3}_dualiter{4}_lr{5}_dc/losses.npy'.format(experiment,lamb,y.size(0), y.size(1), dual_iter, learning_rate), loss_profile)
-        np.save('experiments/{0}_lamb{1}_k{2}_dim{3}_dualiter{4}_lr{5}_dc/time.npy'.format(experiment,lamb,y.size(0), y.size(1), dual_iter, learning_rate), time_profile)
+        torch.save(net, 'experiments/dc/{0}_lamb{1}_k{2}_dim{3}_dualiter{4}_lr{5}_dc_{6}/network'.format(experiment,lamb,y.size(0), y.size(1), dual_iter, learning_rate, device))
+        np.save('experiments/dc/{0}_lamb{1}_k{2}_dim{3}_dualiter{4}_lr{5}_dc_{6}/losses.npy'.format(experiment,lamb,y.size(0), y.size(1), dual_iter, learning_rate, device), loss_profile)
+        np.save('experiments/dc/{0}_lamb{1}_k{2}_dim{3}_dualiter{4}_lr{5}_dc_{6}/time.npy'.format(experiment,lamb,y.size(0), y.size(1), dual_iter, learning_rate, device), time_profile)
     return loss_profile
 
 def relax_primal_loss(primal_var, dual_var, beta, lamb):

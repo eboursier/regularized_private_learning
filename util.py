@@ -17,4 +17,5 @@ def get_args(parser):
     parser.add_argument('--dcmaxiter', type=int, default=1000, help='number of iterations for dc method')
     parser.add_argument('--sinkmaxiter', type=int, default=1000, help='number of iterations for sinkhorn method')
     parser.add_argument('--descentmaxiter', type=int, default=10000, help='number of iterations for descent method')
+    parser.add_argument('--gpu', type=bool, default=False, help='If set to True, train with GPU')
     return parser

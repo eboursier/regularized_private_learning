@@ -107,6 +107,14 @@ if __name__ == '__main__':
 	manual_seed = 137
 	np.random.seed(seed=manual_seed)
 	torch.manual_seed(manual_seed)
+    if args.gpu:
+        torch.cuda.manual_seed(manual_seed)
+        device = torch.device("cuda:0")
+        dev = "gpu"
+        print('Device {}'.format(device))
+    else:
+        dev = "cpu"
+        print('Device {}'.format(dev))
 	    
 	cost = sinkhorn._linear_cost
 
@@ -115,29 +123,38 @@ if __name__ == '__main__':
 		## generate prior
 		y = 2*torch.rand(args.K, args.dim)-1
 		beta = F.softmax(torch.rand(args.K))
+        if args.gpu:
+            y.to(device)
+            beta.to(device)
 
 		## Sinkhorn experiment
 		net = SinkhornNet(args.K+2, args.dim)
+        if args.gpu:
+            net.to(device)
 		net.apply(init_weights)
 		if net.proj:
 			net.projection()
 		train.train_sinkhorn(net, y, beta, lamb=args.lamb, niter_sink=args.sinkiter, learning_rate=args.sinklr, cost=cost, max_iter=args.sinkmaxiter, experiment=exp,
-							 verbose=args.verbose, verbose_freq=args.verbose_freq, err_threshold=1e-3)
+							 verbose=args.verbose, verbose_freq=args.verbose_freq, err_threshold=1e-3, device=dev)
 
 		## Descent experiment
 		net = DescentNet(args.K+2, args.dim, args.K, beta)
+        if args.gpu:
+            net.to(device)
 		net.apply(init_weights)
 		if net.proj:
 			net.projection()
 		train.train_descent(net, y, beta, lamb=args.lamb, learning_rate=args.descentlr, cost=cost, max_iter=args.descentmaxiter, verbose=args.verbose, experiment=exp,
-							verbose_freq=args.verbose_freq)
+							verbose_freq=args.verbose_freq, device=dev)
 
 		## DC experiment
 		net = DCNet(args.K+2, args.dim, y)
+        if args.gpu:
+            net.to(device)
 		net.apply(init_weights)
 		if net.proj:
 			net.projection()
 		train.train_dc(net, y, beta, lamb=args.lamb, learning_rate=args.dclr, cost=cost, max_iter=args.dcmaxiter, dual_iter=args.dcdualiter, err_threshold=1e-4, 
-						verbose=args.verbose, experiment=exp, verbose_freq=args.verbose_freq)
+						verbose=args.verbose, experiment=exp, verbose_freq=args.verbose_freq, device=dev)
 
 	print('Experiments ended')
