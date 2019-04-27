@@ -22,14 +22,14 @@ class Net(nn.Module):
         output = self.decoder(input)
         return output
 
-def simplex_proj(x, p=1):
+def simplex_proj(x, p=1, device="cpu"):
     """
     compute the projection of x onto the simplex defined by x_i>=0 and sum x_i <= p
     See https://arxiv.org/abs/1101.6081
     """
     u,_ = torch.sort(x, descending=True)
     cs = u.cumsum(0) - p
-    ind = torch.arange(len(x), dtype=torch.float) + 1
+    ind = torch.arange(len(x), dtype=torch.float, device=device) + 1
     cond = u - cs / ind > 0
     rho = ind[cond][-1]
     theta = cs[cond][-1] / rho
@@ -49,7 +49,7 @@ def train_sinkhorn(net, y, beta, lamb = 1, niter_sink = 1, max_iter=1000, cost=s
     #net.apply(network.weights_init)
 
     optimizer = torch.optim.SGD(net.parameters(), lr=learning_rate, momentum=0)
-    one = torch.FloatTensor([1])
+    one = torch.FloatTensor([1]).to(device)
 
     iterations = 0
     loss_profile = []
@@ -84,7 +84,7 @@ def train_sinkhorn(net, y, beta, lamb = 1, niter_sink = 1, max_iter=1000, cost=s
 
         _, gamma = sinkhorn.sinkhorn_loss_primal(alpha, x, beta, y, lamb, niter=100, cost=cost, err_threshold=1e-4)
         loss_p = torch.sum(gamma*cost(x,y)) + lamb*sinkhorn._KL(alpha, beta, gamma, epsilon=0)
-        loss_profile.append(loss_p.detach().numpy())
+        loss_profile.append(loss_p.cpu().detach().numpy())
 
 
         iterations += 1
@@ -121,7 +121,7 @@ def train_descent(net, y, beta, lamb = 1, max_iter=1000, cost=sinkhorn._squared_
     #net.apply(network.weights_init)
 
     optimizer = torch.optim.SGD(net.parameters(), lr=learning_rate, momentum=0)
-    one = torch.FloatTensor([1])
+    one = torch.FloatTensor([1]).to(device)
 
     iterations = 0
     loss_profile = []
@@ -152,7 +152,7 @@ def train_descent(net, y, beta, lamb = 1, max_iter=1000, cost=sinkhorn._squared_
         running_time += (timeit.default_timer()-time) # reasons explained in train_sinkhorn
         time_profile.append(running_time)
 
-        loss_profile.append(loss.detach().numpy())
+        loss_profile.append(loss.cpu().detach().numpy())
 
         iterations += 1
         
@@ -184,7 +184,7 @@ def train_dc(net, y, beta, lamb = 1, max_iter=1000, cost=sinkhorn._squared_dista
     #net = Net(network)
     #net.apply(network.weights_init)
 
-    one = torch.FloatTensor([1])
+    one = torch.FloatTensor([1]).to(device)
 
     iterations = 0
     loss_profile = []
@@ -199,7 +199,7 @@ def train_dc(net, y, beta, lamb = 1, max_iter=1000, cost=sinkhorn._squared_dista
         time = timeit.default_timer()
         gamma, x = net(one)
         dual_var = -torch.mm(x, y.t()) # dual iteration of DCA
-        gamma_it = solve_relaxed_primal(dual_var, beta, gamma, lamb=lamb, max_iter=dual_iter, learning_rate=learning_rate, err_threshold=err_threshold, debug=debug) # primal iteration of DCA
+        gamma_it = solve_relaxed_primal(dual_var, beta, gamma, lamb=lamb, max_iter=dual_iter, learning_rate=learning_rate, err_threshold=err_threshold, debug=debug, device=device) # primal iteration of DCA
 
         alpha = torch.sum(gamma_it, 1)
         #C = cost(x, y, **kwargs)
@@ -209,7 +209,7 @@ def train_dc(net, y, beta, lamb = 1, max_iter=1000, cost=sinkhorn._squared_dista
         time_profile.append(running_time)
 
         loss = lamb*sinkhorn._KL(alpha, beta, gamma_it) - torch.sum(gamma_it*dual_var)
-        loss_profile.append(loss.detach().numpy())    
+        loss_profile.append(loss.cpu().detach().numpy())    
         net.gamma = gamma_it
         iterations += 1
         
@@ -233,7 +233,7 @@ def relax_primal_loss(primal_var, dual_var, beta, lamb):
     h_relax = torch.sum(primal_var*dual_var)
     return g-h_relax
 
-def solve_relaxed_primal(dual_var, beta, gamma, lamb=1, max_iter=100, learning_rate=0.01, err_threshold=1e-4, return_losses=False, debug=False):
+def solve_relaxed_primal(dual_var, beta, gamma, lamb=1, max_iter=100, learning_rate=0.01, err_threshold=1e-4, return_losses=False, debug=False, device="cpu"):
     """
     Find an approximated solution of inf(lambda KL(gamma, gamma_1 \times beta) - <gamma, dual_var>) in the feasible set of gamma using projected gradient
     """
@@ -265,7 +265,7 @@ def solve_relaxed_primal(dual_var, beta, gamma, lamb=1, max_iter=100, learning_r
 
         #projection
         for k in range(prim_var.size(1)):
-            prim_var.data[:, k] = simplex_proj(prim_var.data[:,k], beta[k])
+            prim_var.data[:, k] = simplex_proj(prim_var.data[:,k], beta[k], device)
         iterations += 1
         
 

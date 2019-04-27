@@ -21,12 +21,13 @@ def init_weights(m):
 
 class SinkhornNet(nn.Module):
 
-    def __init__(self, k, d):
+    def __init__(self, k, d, device="cpu"):
         super(SinkhornNet, self).__init__()
         self.fc1 = nn.Linear(1, d*k, bias=False)
         self.fc2 = nn.Linear(1, k, bias=False)
         self.d = d
         self.proj = True
+        self.device = device
         
     def forward(self, z):
         x = self.fc1(z)
@@ -42,19 +43,20 @@ class SinkhornNet(nn.Module):
     
     def projection(self):
         torch.clamp_(self.fc1.weight.data, min=-1, max=1)
-        self.fc2.weight.data = train.simplex_proj(self.fc2.weight.data.flatten()).view(-1, 1)
+        self.fc2.weight.data = train.simplex_proj(self.fc2.weight.data.flatten(), device=self.device).view(-1, 1)
 
 
 
 class DCNet(nn.Module):
 
-    def __init__(self, k, d, y):
+    def __init__(self, k, d, y, device="cpu"):
         super(DCNet, self).__init__()
         self.d = d
         self.y = y
         self.K = len(y)
-        self.gamma = torch.rand(k, self.K)
+        self.gamma = torch.rand(k, self.K, device=device)
         self.proj = False # use projected gradient step
+        self.device = device
         
     def forward(self, z):
         x = -torch.sign(torch.mm(self.gamma, self.y))
@@ -69,7 +71,7 @@ class DCNet(nn.Module):
 
 class DescentNet(nn.Module):
 
-    def __init__(self, k, d, K, beta):
+    def __init__(self, k, d, K, beta, device="cpu"):
         super(DescentNet, self).__init__()
         self.fc1 = nn.Linear(1, d*k, bias=False)
         self.fc2 = nn.Linear(1, k*K, bias=False)
@@ -77,6 +79,7 @@ class DescentNet(nn.Module):
         self.K = K
         self.beta = beta
         self.proj = True
+        self.device = device
 
     def forward(self, z):
         x = self.fc1(z).view(-1, self.d)
@@ -95,66 +98,65 @@ class DescentNet(nn.Module):
         gamma = self.fc2.weight.clone().view(-1, self.K)
         # marginale beta
         for k in range(self.K):
-            gamma[:,k] = train.simplex_proj(gamma[:,k], self.beta[k])
+            gamma[:,k] = train.simplex_proj(gamma[:,k], self.beta[k], device=self.device)
         self.fc2.weight.data = gamma.view(-1, 1)
     
 
 if __name__ == '__main__':
-	parser = argparse.ArgumentParser()
-	parser = util.get_args(parser)
+    parser = argparse.ArgumentParser()
+    parser = util.get_args(parser)
 
-	args = parser.parse_args()
-	manual_seed = 137
-	np.random.seed(seed=manual_seed)
-	torch.manual_seed(manual_seed)
+    args = parser.parse_args()
+    manual_seed = 137
+    np.random.seed(seed=manual_seed)
+    torch.manual_seed(manual_seed)
+    torch.cuda.manual_seed(manual_seed)
+
     if args.gpu:
-        torch.cuda.manual_seed(manual_seed)
-        device = torch.device("cuda:0")
-        dev = "gpu"
-        print('Device {}'.format(device))
+        dev = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     else:
-        dev = "cpu"
-        print('Device {}'.format(dev))
-	    
-	cost = sinkhorn._linear_cost
+        dev = torch.device('cpu')
+    print('Device {}'.format(dev))
+
+    cost = sinkhorn._linear_cost
 
 
-	for exp in range(args.expstart, args.expstart+args.nexp):
-		## generate prior
-		y = 2*torch.rand(args.K, args.dim)-1
-		beta = F.softmax(torch.rand(args.K))
+    for exp in range(args.expstart, args.expstart+args.nexp):
+        ## generate prior
+        y = 2*torch.rand(args.K, args.dim)-1
+        beta = F.softmax(torch.rand(args.K))
         if args.gpu:
-            y.to(device)
-            beta.to(device)
+            y = y.to(dev)
+            beta  =beta.to(dev)
 
-		## Sinkhorn experiment
-		net = SinkhornNet(args.K+2, args.dim)
+        ## Sinkhorn experiment
+        net = SinkhornNet(args.K+2, args.dim)
         if args.gpu:
-            net.to(device)
-		net.apply(init_weights)
-		if net.proj:
-			net.projection()
-		train.train_sinkhorn(net, y, beta, lamb=args.lamb, niter_sink=args.sinkiter, learning_rate=args.sinklr, cost=cost, max_iter=args.sinkmaxiter, experiment=exp,
-							 verbose=args.verbose, verbose_freq=args.verbose_freq, err_threshold=1e-3, device=dev)
+            net.to(dev)
+        net.apply(init_weights)
+        if net.proj:
+            net.projection()
+        train.train_sinkhorn(net, y, beta, lamb=args.lamb, niter_sink=args.sinkiter, learning_rate=args.sinklr, cost=cost, max_iter=args.sinkmaxiter, experiment=exp,
+                                verbose=args.verbose, verbose_freq=args.verbose_freq, err_threshold=1e-3, device=dev)
 
-		## Descent experiment
-		net = DescentNet(args.K+2, args.dim, args.K, beta)
+        ## Descent experiment
+        net = DescentNet(args.K+2, args.dim, args.K, beta)
         if args.gpu:
-            net.to(device)
-		net.apply(init_weights)
-		if net.proj:
-			net.projection()
-		train.train_descent(net, y, beta, lamb=args.lamb, learning_rate=args.descentlr, cost=cost, max_iter=args.descentmaxiter, verbose=args.verbose, experiment=exp,
-							verbose_freq=args.verbose_freq, device=dev)
+            net.to(dev)
+        net.apply(init_weights)
+        if net.proj:
+            net.projection()
+        train.train_descent(net, y, beta, lamb=args.lamb, learning_rate=args.descentlr, cost=cost, max_iter=args.descentmaxiter, verbose=args.verbose, experiment=exp,
+                                verbose_freq=args.verbose_freq, device=dev)
 
-		## DC experiment
-		net = DCNet(args.K+2, args.dim, y)
+        ## DC experiment
+        net = DCNet(args.K+2, args.dim, y)
         if args.gpu:
-            net.to(device)
-		net.apply(init_weights)
-		if net.proj:
-			net.projection()
-		train.train_dc(net, y, beta, lamb=args.lamb, learning_rate=args.dclr, cost=cost, max_iter=args.dcmaxiter, dual_iter=args.dcdualiter, err_threshold=1e-4, 
-						verbose=args.verbose, experiment=exp, verbose_freq=args.verbose_freq, device=dev)
+            net.to(dev)
+        net.apply(init_weights)
+        if net.proj:
+            net.projection()
+        train.train_dc(net, y, beta, lamb=args.lamb, learning_rate=args.dclr, cost=cost, max_iter=args.dcmaxiter, dual_iter=args.dcdualiter, err_threshold=1e-4, 
+                        verbose=args.verbose, experiment=exp, verbose_freq=args.verbose_freq, device=dev)
 
-	print('Experiments ended')
+    print('Experiments ended')
