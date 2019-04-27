@@ -23,7 +23,7 @@ manual_seed = 137
 np.random.seed(seed=manual_seed)
 torch.manual_seed(manual_seed)
 torch.cuda.manual_seed(manual_seed)
-nexp = 1
+nexp = 10
 cost = sinkhorn._linear_cost
 
 #dev = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -35,8 +35,8 @@ os.system('mkdir experiments/type_data_K{0}_dim{1}'.format(K, dim))
 # Sinkhorn tuning
 
 sinkiterrange = [5]
-sinklrrange = [1e-2]
-sinkmaxiter = 5000
+sinklrrange = np.geomspace(1e-1, 1000, 5)
+sinkmaxiter = 500
 
 for s in itertools.product(sinkiterrange, sinklrrange):
 	for exp in range(nexp):
@@ -79,8 +79,8 @@ for s in itertools.product(sinkiterrange, sinklrrange):
 
 
 # Descent training
-descentlrrange = [1e-2]
-descentmaxiter = 50000
+descentlrrange = np.geomspace(1e-1, 1000, 5)
+descentmaxiter = 5000
 
 for descentlr in descentlrrange:
 	for exp in range(nexp):
@@ -107,9 +107,9 @@ for descentlr in descentlrrange:
 
 
 # DC training
-dclrrange = [0.00001]
+dclrrange = np.geomspace(1e-7, 1e-3, 5)
 dcdualiterrange = [5]
-dcmaxiter = 1000
+dcmaxiter = 200
 
 for s in itertools.product(dcdualiterrange, dclrrange):
 	for exp in range(nexp):
