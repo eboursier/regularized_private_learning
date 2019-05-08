@@ -3,24 +3,25 @@ import torch.nn as nn
 import torch.nn.functional as F
 import timeit
 import sinkhorn
+from train import simplex_proj
 
-def LazySecondPriceLoss(net, input, y, size_batch,nb_opponents=1, distribution="exponential", rp=0.001, eta=1000):
+def LazySecondPriceLoss(net, input, y, size_batch,nb_opponents=1, distribution="exponential", rp=0, eta=1000, device="cpu"):
   """
   Estimate the loss for training. When precisely evaluating the loss, set rp to 0 and eta to 100.
   """
   _, output = net(input)
   output_grad = []
   true_val = input@y.view(1,-1)
-  loss = torch.zeros(net.nactions, y.size(0))
+  loss = torch.ones(net.nactions, y.size(0), device=device)  # we need the loss to be positive for stability with small lambda
   for i, out in enumerate(output):
       grad = torch.autograd.grad(torch.sum(out),input,retain_graph=True, create_graph=True)[0].flatten()
       virtual = out - grad
       indicator = torch.sigmoid(eta*(virtual-rp))
-      winning = torch.ones(out.size())
+      winning = torch.ones(out.size(), device=device)
       if nb_opponents>1:
         winning = winning**nb_opponents # in case of several opponents; If loop to optimize autograd for one opponent
       l = (true_val - virtual[:, None])*winning[:, None]*indicator[:, None]
-      loss[i,:] = 1.- 1/size_batch*torch.sum(l, dim=0) # we need the loss to be positive for stability with small lambda
+      loss[i,:] -= 1/size_batch*torch.sum(l, dim=0)
 
   return loss
 
@@ -33,8 +34,8 @@ class BidderStrategy(nn.Module):
         self.fc1 = []
         for i in range(self.nactions):
           self.fc1.append(nn.Linear(1, self.size_layer))
-          torch.nn.init.uniform_(self.fc1[i].bias,a=-1.0, b = 1.0)
-          torch.nn.init.uniform_(self.fc1[i].weight,a=-1.0, b =2.0)
+          torch.nn.init.uniform_(self.fc1[i].bias,a=-1.0, b=1.0)
+          torch.nn.init.uniform_(self.fc1[i].weight,a=-1.0, b=2.0)
         self.fc1 = nn.ModuleList(self.fc1)
         
         self.fc3 = nn.Linear(1, self.nactions, bias=False)
@@ -48,16 +49,20 @@ class BidderStrategy(nn.Module):
         self.fc2 = nn.ModuleList(self.fc2)
         self.device = device
         self.one = torch.FloatTensor([1]).to(device)
+        self.proj = True
 
     def forward(self, inp):
       out = []
       for i in range(self.nactions):
         out.append(self.fc2[i](F.relu(self.fc1[i](inp))).flatten())
-      alpha = F.softmax(self.fc3(self.one), dim=0)
+      alpha = self.fc3(self.one)
       return alpha, out
 
     def alpha(self):
       return F.softmax(self.fc3(self.one), dim=0)
+
+    def projection(self):
+      self.fc3.weight.data = simplex_proj(self.fc3.weight.data.flatten(), device=self.device).view(-1, 1)
 
 
 
@@ -88,9 +93,10 @@ def train_sinkhorn_auction(net, y, beta, lamb=1, niter_sink = 5, max_iter=1000, 
       input = torch.zeros((size_batch, 1), requires_grad=True)
       samples = distrib.sample((size_batch, 1))
       input.data = samples.clone()
+      input = input.to(device)
 
       ###### Compute loss matrix ###
-      C = LazySecondPriceLoss(net, input, y, size_batch, distribution="exponential")
+      C = LazySecondPriceLoss(net, input, y, size_batch, distribution="exponential", device=device)
 
       ###### Sinkhorn loss #########
       alpha = net.alpha()
@@ -99,6 +105,11 @@ def train_sinkhorn_auction(net, y, beta, lamb=1, niter_sink = 5, max_iter=1000, 
       optimizer.step()
 
       loss_profile.append(loss.cpu().detach().numpy())
+
+      # projected gradient
+      if net.proj:
+          net.projection()
+
       optimizer.zero_grad()
       iterations += 1
       
@@ -120,13 +131,13 @@ def train_sinkhorn_auction(net, y, beta, lamb=1, niter_sink = 5, max_iter=1000, 
                     y.size(1), niter_sink, learning_rate, device, size_batch), l)
     return loss_profile
 
-def eval(net, y, beta, lamb=1, niter_sink = 5, err_threshold=1e-4, size_batch=2500):
+def eval(net, y, beta, lamb=1, niter_sink = 5, err_threshold=1e-4, size_batch=2500, rp=0, eta=10000):
   distrib = torch.distributions.Exponential(torch.tensor(1.))
   input = torch.zeros((size_batch, 1), requires_grad=True)
   samples = distrib.sample((size_batch, 1))
   input.data = samples.clone()
   ###### Compute loss matrix ###
-  C = LazySecondPriceLoss(net, input, y, size_batch, distribution="exponential", rp=0, eta=10000)
+  C = LazySecondPriceLoss(net, input, y, size_batch, distribution="exponential", rp=rp, eta=eta)
 
   ###### Sinkhorn loss #########
   alpha = net.alpha()
