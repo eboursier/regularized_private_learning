@@ -31,7 +31,8 @@ class SinkhornNet(nn.Module):
         
     def forward(self, z):
         x = self.fc1(z)
-        alpha = F.softmax(self.fc2(z), dim=0)
+        #alpha = F.softmax(self.fc2(z), dim=0)
+        alpha = self.fc2(z)
         return alpha, x.view(-1, self.d)
 
     def num_flat_features(self, x):
@@ -43,7 +44,7 @@ class SinkhornNet(nn.Module):
     
     def projection(self):
         torch.clamp_(self.fc1.weight.data, min=-1, max=1)
-        #self.fc2.weight.data = train.simplex_proj(self.fc2.weight.data.flatten(), device=self.device).view(-1, 1)
+        self.fc2.weight.data = train.simplex_proj(self.fc2.weight.data.flatten(), device=self.device).view(-1, 1)
 
 
 
@@ -83,7 +84,8 @@ class DescentNet(nn.Module):
 
     def forward(self, z):
         x = self.fc1(z).view(-1, self.d)
-        gamma = self.beta*F.softmax(self.fc2(z).view(-1, self.K), dim=0)
+        #gamma = self.beta*F.softmax(self.fc2(z).view(-1, self.K), dim=0)
+        gamma = self.fc2(z).view(-1, self.K)
         return gamma, x
 
     def num_flat_features(self, x):
@@ -95,11 +97,11 @@ class DescentNet(nn.Module):
 
     def projection(self):
         torch.clamp_(self.fc1.weight.data, min=-1, max=1)
-        #gamma = self.fc2.weight.clone().view(-1, self.K)
-        # marginale beta
-        #for k in range(self.K):
-        #    gamma[:,k] = train.simplex_proj(gamma[:,k], self.beta[k], device=self.device)
-        #self.fc2.weight.data = gamma.view(-1, 1)
+        gamma = self.fc2.weight.clone().view(-1, self.K)
+        #marginale beta
+        for k in range(self.K):
+            gamma[:,k] = train.simplex_proj(gamma[:,k], self.beta[k], device=self.device)
+        self.fc2.weight.data = gamma.view(-1, 1)
     
 
 if __name__ == '__main__':

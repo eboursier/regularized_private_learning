@@ -4,3 +4,5 @@ experiments/*
 linear.ipynb
 plot.ipynb
 archives/*
+figures/*
+old_code.py

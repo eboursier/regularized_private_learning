@@ -17,13 +17,13 @@ one = torch.FloatTensor([1])
 
 K = 100
 dim = 20
-lamb = 1.
+lamb = 0.1
 expstart = 1
 manual_seed = 137
 np.random.seed(seed=manual_seed)
 torch.manual_seed(manual_seed)
 torch.cuda.manual_seed(manual_seed)
-nexp = 10
+nexp = 200
 cost = sinkhorn._linear_cost
 
 #dev = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -35,8 +35,8 @@ os.system('mkdir experiments/type_data_K{0}_dim{1}'.format(K, dim))
 # Sinkhorn tuning
 
 sinkiterrange = [5]
-sinklrrange = np.geomspace(1e-1, 1000, 5)
-sinkmaxiter = 500
+sinklrrange = [1]
+sinkmaxiter = 3000
 
 for s in itertools.product(sinkiterrange, sinklrrange):
 	for exp in range(nexp):
@@ -46,6 +46,7 @@ for s in itertools.product(sinkiterrange, sinklrrange):
 			y = torch.from_numpy(np.load('experiments/type_data_K{0}_dim{1}/y_{2}.npy'.format(K, dim, exp+1)))
 		except:
 			y = 2*torch.rand(K, dim)-1
+			y = (y.t() / torch.sum(torch.abs(y), dim=1)).t()
 			np.save('experiments/type_data_K{0}_dim{1}/y_{2}.npy'.format(K, dim, exp+1), y)
 
 		try:
@@ -79,8 +80,8 @@ for s in itertools.product(sinkiterrange, sinklrrange):
 
 
 # Descent training
-descentlrrange = np.geomspace(1e-1, 1000, 5)
-descentmaxiter = 5000
+descentlrrange = [1e-5, 10.]
+descentmaxiter = 1000
 
 for descentlr in descentlrrange:
 	for exp in range(nexp):
@@ -107,9 +108,9 @@ for descentlr in descentlrrange:
 
 
 # DC training
-dclrrange = np.geomspace(1e-7, 1e-3, 5)
+dclrrange = [1e-4]
 dcdualiterrange = [5]
-dcmaxiter = 200
+dcmaxiter = 250
 
 for s in itertools.product(dcdualiterrange, dclrrange):
 	for exp in range(nexp):

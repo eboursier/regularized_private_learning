@@ -44,10 +44,6 @@ def train_sinkhorn(net, y, beta, lamb = 1, niter_sink = 1, max_iter=1000, cost=s
     if experiment!=0:
         os.system('mkdir experiments/sinkhorn/{0}_lamb{1}_k{2}_dim{3}_sinkiter{4}_lr{5}_sinkhorn_{6}'.format(experiment,lamb,y.size(0), y.size(1), niter_sink, learning_rate, device))
 
-     # load network
-    #net = Net(network)
-    #net.apply(network.weights_init)
-
     optimizer = torch.optim.SGD(net.parameters(), lr=learning_rate, momentum=0)
     one = torch.FloatTensor([1]).to(device)
 
@@ -116,10 +112,6 @@ def train_descent(net, y, beta, lamb = 1, max_iter=1000, cost=sinkhorn._squared_
     if experiment!=0:
         os.system('mkdir experiments/descent/{0}_lamb{1}_k{2}_dim{3}_lr{4}_descent_{5}'.format(experiment,lamb,y.size(0), y.size(1), learning_rate, device))
 
-     # load network
-    #net = Net(network)
-    #net.apply(network.weights_init)
-
     optimizer = torch.optim.SGD(net.parameters(), lr=learning_rate, momentum=0)
     one = torch.FloatTensor([1]).to(device)
 
@@ -180,10 +172,6 @@ def train_dc(net, y, beta, lamb = 1, max_iter=1000, cost=sinkhorn._squared_dista
     if experiment!=0:
         os.system('mkdir experiments/dc/{0}_lamb{1}_k{2}_dim{3}_dualiter{4}_lr{5}_dc_{6}'.format(experiment,lamb,y.size(0), y.size(1), dual_iter, learning_rate, device))
 
-     # load network
-    #net = Net(network)
-    #net.apply(network.weights_init)
-
     one = torch.FloatTensor([1]).to(device)
 
     iterations = 0
@@ -201,13 +189,12 @@ def train_dc(net, y, beta, lamb = 1, max_iter=1000, cost=sinkhorn._squared_dista
         dual_var = -torch.mm(x, y.t()) # dual iteration of DCA
         gamma_it = solve_relaxed_primal(dual_var, beta, gamma, lamb=lamb, max_iter=dual_iter, learning_rate=learning_rate, err_threshold=err_threshold, debug=debug, device=device) # primal iteration of DCA
 
-        alpha = torch.sum(gamma_it, 1)
-        #C = cost(x, y, **kwargs)
-        #loss = torch.sum( gamma_it * C )  + lamb*sinkhorn._KL(alpha, beta, gamma_it)
-
         running_time += (timeit.default_timer()-time) # reasons explained in train_sinkhorn
         time_profile.append(running_time)
 
+        alpha = torch.sum(gamma_it, 1)
+        #C = cost(x, y, **kwargs)
+        #loss = torch.sum( gamma_it * C )  + lamb*sinkhorn._KL(alpha, beta, gamma_it)
         loss = lamb*sinkhorn._KL(alpha, beta, gamma_it) - torch.sum(gamma_it*dual_var)
         loss_profile.append(loss.cpu().detach().numpy())    
         net.gamma = gamma_it
