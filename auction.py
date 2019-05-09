@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import timeit
 import sinkhorn
+import os
+import numpy as np
 from train import simplex_proj
 
 def LazySecondPriceLoss(net, input, y, size_batch,nb_opponents=1, distribution="exponential", rp=0, eta=1000, device="cpu"):
@@ -17,7 +19,8 @@ def LazySecondPriceLoss(net, input, y, size_batch,nb_opponents=1, distribution="
       grad = torch.autograd.grad(torch.sum(out),input,retain_graph=True, create_graph=True)[0].flatten()
       virtual = out - grad
       indicator = torch.sigmoid(eta*(virtual-rp))
-      winning = torch.ones(out.size(), device=device)
+      winning = torch.min(out, torch.ones(out.size())) # uniform on [0,1] adversary
+      #winning = 1- torch.exp(-out) #exp 1 adversary
       if nb_opponents>1:
         winning = winning**nb_opponents # in case of several opponents; If loop to optimize autograd for one opponent
       l = (true_val - virtual[:, None])*winning[:, None]*indicator[:, None]
@@ -44,8 +47,8 @@ class BidderStrategy(nn.Module):
         self.fc2 = []
         for i in range(self.nactions):
           self.fc2.append(nn.Linear(self.size_layer, 1))
-          torch.nn.init.normal_(self.fc2[i].weight,mean=2/self.size_layer, std = 0.01)
-          torch.nn.init.normal_(self.fc2[i].bias,mean=0.0, std = 0.001)
+          torch.nn.init.normal_(self.fc2[i].weight,mean=2*(i+1)/(self.size_layer*self.nactions), std = 0.01*(i+1)/self.nactions)
+          torch.nn.init.normal_(self.fc2[i].bias,mean=0.0, std = 0.001*(i+1)/self.nactions)
         self.fc2 = nn.ModuleList(self.fc2)
         self.device = device
         self.one = torch.FloatTensor([1]).to(device)
@@ -73,8 +76,7 @@ def train_sinkhorn_auction(net, y, beta, lamb=1, niter_sink = 5, max_iter=1000, 
     """
     start_time = timeit.default_timer()
     if experiment!=0:
-        os.system('mkdir experiments/sinkhorn_auction/{0}_lamb{1}_k{2}_sinkiter{4}_lr{5}_sinkhorn_{6}_batch{7}'.format(experiment,lamb,y.size(0), 
-                    y.size(1), niter_sink, learning_rate, device, size_batch))
+        os.system('mkdir experiments/sinkhorn_auction/{0}_lamb{1}_k{2}_sinkiter{3}_lr{4}_sinkhorn_{5}_batch{6}'.format(experiment,lamb,y.size(0), niter_sink, learning_rate, device, size_batch))
 
     optimizer = torch.optim.SGD(net.parameters(), lr=learning_rate, momentum=0)
     one = torch.FloatTensor([1]).to(device)
@@ -122,13 +124,17 @@ def train_sinkhorn_auction(net, y, beta, lamb=1, niter_sink = 5, max_iter=1000, 
         print('done in {0} s'.format(t_expe))
     if experiment!=0:
         # save data
-        torch.save(net, 'experiments/sinkhorn_auction/{0}_lamb{1}_k{2}_sinkiter{4}_lr{5}_sinkhorn_{6}_batch{7}/network'.format(experiment,lamb,y.size(0), 
-                    y.size(1), niter_sink, learning_rate, device, size_batch))
-        np.save('experiments/sinkhorn_auction/{0}_lamb{1}_k{2}_sinkiter{4}_lr{5}_sinkhorn_{6}_batch{7}/losses.npy'.format(experiment,lamb,y.size(0), 
-                    y.size(1), niter_sink, learning_rate, device, size_batch), loss_profile)
-        l, _, _ = eval(net, y, beta, lamb=lamb, niter_sink=niter_sink, size_batch=(int)(10**6))
-        np.save('experiments/sinkhorn_auction/{0}_lamb{1}_k{2}_sinkiter{4}_lr{5}_sinkhorn_{6}_batch{7}/eval.npy'.format(experiment,lamb,y.size(0), 
-                    y.size(1), niter_sink, learning_rate, device, size_batch), l)
+        torch.save(net, 'experiments/sinkhorn_auction/{0}_lamb{1}_k{2}_sinkiter{3}_lr{4}_sinkhorn_{5}_batch{6}/network'.format(experiment,lamb,y.size(0), 
+                    niter_sink, learning_rate, device, size_batch))
+        np.save('experiments/sinkhorn_auction/{0}_lamb{1}_k{2}_sinkiter{3}_lr{4}_sinkhorn_{5}_batch{6}/losses.npy'.format(experiment,lamb,y.size(0), 
+                    niter_sink, learning_rate, device, size_batch), loss_profile)
+        l, _, _, pl, ul = eval(net, y, beta, lamb=lamb, niter_sink=(int)(1e5), size_batch=(int)(1e6))
+        np.save('experiments/sinkhorn_auction/{0}_lamb{1}_k{2}_sinkiter{3}_lr{4}_sinkhorn_{5}_batch{6}/eval_loss.npy'.format(experiment,lamb,y.size(0), 
+                  niter_sink, learning_rate, device, size_batch), l.detach().numpy())
+        np.save('experiments/sinkhorn_auction/{0}_lamb{1}_k{2}_sinkiter{3}_lr{4}_sinkhorn_{5}_batch{6}/eval_privacy_loss.npy'.format(experiment,lamb,y.size(0), 
+                  niter_sink, learning_rate, device, size_batch), pl.detach().numpy())
+        np.save('experiments/sinkhorn_auction/{0}_lamb{1}_k{2}_sinkiter{3}_lr{4}_sinkhorn_{5}_batch{6}/eval_utility_loss.npy'.format(experiment,lamb,y.size(0), 
+                  niter_sink, learning_rate, device, size_batch), ul.detach().numpy())
     return loss_profile
 
 def eval(net, y, beta, lamb=1, niter_sink = 5, err_threshold=1e-4, size_batch=2500, rp=0, eta=10000):
@@ -142,5 +148,44 @@ def eval(net, y, beta, lamb=1, niter_sink = 5, err_threshold=1e-4, size_batch=25
   ###### Sinkhorn loss #########
   alpha = net.alpha()
   _, gamma = sinkhorn.sinkhorn_loss_primal(alpha, C, beta, y, lamb, niter=niter_sink, cost="matrix", err_threshold=err_threshold, verbose=False)
-  loss = torch.sum(gamma*C) + lamb*sinkhorn._KL(alpha, beta, gamma, epsilon=0)
-  return loss, gamma, C
+  true_alpha = torch.sum(gamma, dim=1)
+  p_loss = sinkhorn._KL(true_alpha, beta, gamma, epsilon=0)
+  u_loss = torch.sum(gamma*C)
+  loss = u_loss  + lamb*p_loss
+  return loss, gamma, C, p_loss, u_loss
+
+if __name__ == '__main__':
+  lambrange = np.geomspace(0.0005, 1, 20)
+  niter_sink = 1000 # require a large niter_sink for small values of lamb
+  niter = 1000
+  lr = 0.01
+  batch = 1000
+  size_layer = 100
+  K = 10
+  nactions = 2+K
+  y = torch.linspace(1./K, 1., K) # discretization of uniform distribution
+  beta= torch.ones(K)/K
+  nexp = 10
+  err_threshold = 1e-3
+  device = "cpu"
+  startexp = 1
+  print('Begin simulations on. Parameters:'.format(device))
+  print('lambrange: {} to {} with {} points'.format(lambrange[0], lambrange[-1], len(lambrange)))
+  print('Sinkhorn iterations: {}'.format(niter_sink))
+  print('Descent iterations: {}'.format(niter))
+  print('Learning_rate: {}'.format(lr))
+  print('Batch size: {}'.format(batch))
+  print('Layer size: {}'.format(size_layer))
+  print('K: {}'.format(K))
+  print('Number of experiments: {}'.format(nexp))
+  for lamb in lambrange:
+    for exp in range(startexp, nexp+startexp):
+      p = os.path.isfile('experiments/sinkhorn_auction/{0}_lamb{1}_k{2}_sinkiter{3}_lr{4}_sinkhorn_{5}_batch{6}/eval_utility_loss.npy'.format(exp,lamb,y.size(0), 
+                  niter_sink, lr, device, batch))
+      if not(p):
+        print('Simulate for lambda={}, experiment {}.'.format(lamb, exp))
+        net = BidderStrategy(size_layer=100, nactions=12)
+        if net.proj:
+          net.projection()
+        train_sinkhorn_auction(net, y, beta, lamb=lamb, niter_sink=niter_sink, max_iter=niter, device=device,
+                                                  learning_rate=lr, err_threshold=err_threshold, verbose=False, verbose_freq=100, size_batch=batch, experiment=exp)
