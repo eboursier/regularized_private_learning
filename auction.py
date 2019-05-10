@@ -155,7 +155,7 @@ def eval(net, y, beta, lamb=1, niter_sink = 5, err_threshold=1e-4, size_batch=25
   return loss, gamma, C, p_loss, u_loss
 
 if __name__ == '__main__':
-  lambrange = np.geomspace(0.0005, 1, 20)
+  lambrange = [0.1]
   niter_sink = 1000 # require a large niter_sink for small values of lamb
   niter = 1000
   lr = 0.01
@@ -169,7 +169,7 @@ if __name__ == '__main__':
   err_threshold = 1e-3
   device = "cpu"
   startexp = 1
-  print('Begin simulations on. Parameters:'.format(device))
+  print('Begin simulations on {}. Parameters:'.format(device))
   print('lambrange: {} to {} with {} points'.format(lambrange[0], lambrange[-1], len(lambrange)))
   print('Sinkhorn iterations: {}'.format(niter_sink))
   print('Descent iterations: {}'.format(niter))
