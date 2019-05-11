@@ -35,7 +35,7 @@ def simplex_proj(x, p=1, device="cpu"):
     theta = cs[cond][-1] / rho
     return F.relu(x - theta)
 
-def train_sinkhorn(net, y, beta, lamb = 1, niter_sink = 1, max_iter=1000, cost=sinkhorn._squared_distances,
+def train_sinkhorn(net, y, beta, lamb = 1, niter_sink = 1, max_time=10, cost=sinkhorn._squared_distances,
             learning_rate=0.1, err_threshold=1e-4, experiment=0, verbose=False, verbose_freq=100, device="cpu", **kwargs):
     """
     learn a discrete distribution (alpha, x) with a prior (beta, y)
@@ -52,7 +52,7 @@ def train_sinkhorn(net, y, beta, lamb = 1, niter_sink = 1, max_iter=1000, cost=s
     time_profile = []
     start_time = timeit.default_timer()
     running_time = 0
-    while iterations<max_iter:
+    while running_time<max_time:
 
         # ---------------------------
         #        Optimize over net
@@ -103,7 +103,7 @@ def train_sinkhorn(net, y, beta, lamb = 1, niter_sink = 1, max_iter=1000, cost=s
                                                                                                                 learning_rate, device), time_profile)
     return loss_profile
 
-def train_descent(net, y, beta, lamb = 1, max_iter=1000, cost=sinkhorn._squared_distances,
+def train_descent(net, y, beta, lamb = 1, max_time=10, cost=sinkhorn._squared_distances,
                 learning_rate=0.1, experiment=0, verbose=False, verbose_freq=100, device="cpu",  **kwargs):
     """
     learn a discrete distribution (alpha, x) with a prior (beta, y)
@@ -120,7 +120,7 @@ def train_descent(net, y, beta, lamb = 1, max_iter=1000, cost=sinkhorn._squared_
     time_profile = []
     start_time = timeit.default_timer()
     running_time = 0
-    while iterations<max_iter:
+    while running_time<max_time:
 
         # ---------------------------
         #        Optimize over net
@@ -163,7 +163,7 @@ def train_descent(net, y, beta, lamb = 1, max_iter=1000, cost=sinkhorn._squared_
         np.save('experiments/descent/{0}_lamb{1}_k{2}_dim{3}_lr{4}_descent_{5}/time.npy'.format(experiment,lamb,y.size(0), y.size(1), learning_rate, device), time_profile)
     return loss_profile
 
-def train_dc(net, y, beta, lamb = 1, max_iter=1000, cost=sinkhorn._squared_distances, err_threshold=1e-4, dual_iter=100, debug=False,
+def train_dc(net, y, beta, lamb = 1, max_time=10, cost=sinkhorn._squared_distances, err_threshold=1e-4, dual_iter=100, debug=False,
             learning_rate=0.01, experiment=0, verbose=False, verbose_freq=100, device="cpu", **kwargs):
     """
     learn a discrete distribution (alpha, x) with a prior (beta, y)
@@ -179,7 +179,7 @@ def train_dc(net, y, beta, lamb = 1, max_iter=1000, cost=sinkhorn._squared_dista
     time_profile = []
     start_time = timeit.default_timer()
     running_time = 0
-    while iterations<max_iter:
+    while running_time<max_time:
 
         # ---------------------------
         #        Optimize over net
