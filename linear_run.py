@@ -113,9 +113,9 @@ if __name__ == '__main__':
     np.random.seed(seed=manual_seed)
     torch.manual_seed(manual_seed)
     torch.cuda.manual_seed(manual_seed)
-    nexp = 2
+    nexp = 200
     cost = sinkhorn._linear_cost
-    time_allowed = 10 # time spent per training in s
+    time_allowed = 8 # time spent per training in s
 
     #dev = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     dev = torch.device('cpu')
