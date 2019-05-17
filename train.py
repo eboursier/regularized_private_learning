@@ -8,11 +8,6 @@ import sinkhorn
 
 import numpy as np
 
-#import base_module
-
-
-# input: batch_size * nz * 1 * 1
-# output: batch_size * nc * image_size * image_size
 class Net(nn.Module):
     def __init__(self, decoder):
         super(Net, self).__init__()
@@ -35,24 +30,27 @@ def simplex_proj(x, p=1, device="cpu"):
     theta = cs[cond][-1] / rho
     return F.relu(x - theta)
 
+# train parameters of net with the Sinkhorn scheme
 def train_sinkhorn(net, y, beta, lamb = 1, niter_sink = 1, max_time=10, cost=sinkhorn._squared_distances,
             learning_rate=0.1, err_threshold=1e-4, experiment=0, verbose=False, verbose_freq=100, device="cpu", **kwargs):
     """
     learn a discrete distribution (alpha, x) with a prior (beta, y)
     """
 
+    # if experiment !+0, save the simulation
     if experiment!=0:
         os.system('mkdir experiments/sinkhorn/{0}_lamb{1}_k{2}_dim{3}_sinkiter{4}_lr{5}_sinkhorn_{6}'.format(experiment,lamb,y.size(0), y.size(1), niter_sink, learning_rate, device))
 
+    # gradient descent
     optimizer = torch.optim.SGD(net.parameters(), lr=learning_rate, momentum=0)
     one = torch.FloatTensor([1]).to(device)
 
     iterations = 0
-    loss_profile = []
-    time_profile = []
+    loss_profile = [] # evolution of the loss
+    time_profile = [] # evolution of the training time
     start_time = timeit.default_timer()
     running_time = 0
-    while running_time<max_time:
+    while running_time<max_time: # while training time smaller than the limit
 
         # ---------------------------
         #        Optimize over net
@@ -60,25 +58,26 @@ def train_sinkhorn(net, y, beta, lamb = 1, niter_sink = 1, max_time=10, cost=sin
         time = timeit.default_timer()
         optimizer.zero_grad()
 
-        alpha, x = net(one)
+        alpha, x = net(one) # output of the net (parameters to optimize)
 
 
         ###### Sinkhorn loss #########
 
-        loss, _ = sinkhorn.sinkhorn_loss_primal(alpha, x, beta, y, lamb, niter=niter_sink, cost=cost, err_threshold=err_threshold, verbose=False, **kwargs)
-        loss.backward(one)
-        optimizer.step()
+        loss, _ = sinkhorn.sinkhorn_loss_primal(alpha, x, beta, y, lamb, niter=niter_sink, cost=cost, err_threshold=err_threshold, verbose=False, **kwargs) # compute the loss
+        loss.backward(one) # automatic differentiation
+        optimizer.step() # gradient descent step
 
-        # projected gradient
+        # if projected gradient
         if net.proj:
             net.projection()
 
         running_time += (timeit.default_timer()-time) # for the sinkhorn method, it takes some time to compute the accurate loss from the estimated loss in the training
-        time_profile.append(running_time)    # (as niter_sink can be small). In this case, we compute the true loss for the plot but it does not count in the running time
+                                                    # because we need to do sinkhorn algorithm with more iterations
+        time_profile.append(running_time)    # (as niter_sink is small). In this case, we compute the true loss for the plot but it does not count in the running time
 
         # compute the true loss for plots and does not count in the running time
 
-        _, gamma = sinkhorn.sinkhorn_loss_primal(alpha, x, beta, y, lamb, niter=100, cost=cost, err_threshold=1e-4)
+        _, gamma = sinkhorn.sinkhorn_loss_primal(alpha, x, beta, y, lamb, niter=100, cost=cost, err_threshold=1e-4) # 100 is enough with the chosen parameters in the experiments
         loss_p = torch.sum(gamma*cost(x,y)) + lamb*sinkhorn._KL(alpha, beta, gamma, epsilon=0)
         loss_profile.append(loss_p.cpu().detach().numpy())
 
@@ -106,7 +105,7 @@ def train_sinkhorn(net, y, beta, lamb = 1, niter_sink = 1, max_time=10, cost=sin
 def train_descent(net, y, beta, lamb = 1, max_time=10, cost=sinkhorn._squared_distances,
                 learning_rate=0.1, experiment=0, verbose=False, verbose_freq=100, device="cpu",  **kwargs):
     """
-    learn a discrete distribution (alpha, x) with a prior (beta, y)
+    learn a discrete distribution (gamma, x) with a prior (beta, y) using gradient descent on (gamma, x). Similar structure than train_sinkhorn
     """
 
     if experiment!=0:
@@ -128,15 +127,15 @@ def train_descent(net, y, beta, lamb = 1, max_time=10, cost=sinkhorn._squared_di
 
         time = timeit.default_timer()
         optimizer.zero_grad()
-        gamma, x = net(one)
+        gamma, x = net(one) # output of the network. Parameters to optimize
         alpha = torch.sum(gamma, dim=1)
 
         ###### Total loss #########
         C = cost(x, y, **kwargs)
 
-        loss = torch.sum( gamma * C )  + lamb*sinkhorn._KL(alpha, beta, gamma)
-        loss.backward(one)
-        optimizer.step()
+        loss = torch.sum( gamma * C )  + lamb*sinkhorn._KL(alpha, beta, gamma) # loss
+        loss.backward(one) # autodiff
+        optimizer.step() # gradient descent step
 
         if net.proj: # for projected gradient
             net.projection()
@@ -144,7 +143,7 @@ def train_descent(net, y, beta, lamb = 1, max_time=10, cost=sinkhorn._squared_di
         running_time += (timeit.default_timer()-time) # reasons explained in train_sinkhorn
         time_profile.append(running_time)
 
-        loss_profile.append(loss.cpu().detach().numpy())
+        loss_profile.append(loss.cpu().detach().numpy()) # here the training loss is accurate
 
         iterations += 1
         
@@ -166,7 +165,7 @@ def train_descent(net, y, beta, lamb = 1, max_time=10, cost=sinkhorn._squared_di
 def train_dc(net, y, beta, lamb = 1, max_time=10, cost=sinkhorn._squared_distances, err_threshold=1e-4, dual_iter=100, debug=False,
             learning_rate=0.01, experiment=0, verbose=False, verbose_freq=100, device="cpu", **kwargs):
     """
-    learn a discrete distribution (alpha, x) with a prior (beta, y)
+    learn a discrete distribution (gamma) with a prior (beta, y) using DCA algorithm.
     """
 
     if experiment!=0:
@@ -185,7 +184,7 @@ def train_dc(net, y, beta, lamb = 1, max_time=10, cost=sinkhorn._squared_distanc
         #        Optimize over net
         # ---------------------------
         time = timeit.default_timer()
-        gamma, x = net(one)
+        gamma, x = net(one) # gamma is the parameter to optimize (the best x for a given gamma is automatically computed here)
         dual_var = -torch.mm(x, y.t()) # dual iteration of DCA
         gamma_it = solve_relaxed_primal(dual_var, beta, gamma, lamb=lamb, max_iter=dual_iter, learning_rate=learning_rate, err_threshold=err_threshold, debug=debug, device=device) # primal iteration of DCA
 
@@ -195,7 +194,7 @@ def train_dc(net, y, beta, lamb = 1, max_time=10, cost=sinkhorn._squared_distanc
         alpha = torch.sum(gamma_it, 1)
         #C = cost(x, y, **kwargs)
         #loss = torch.sum( gamma_it * C )  + lamb*sinkhorn._KL(alpha, beta, gamma_it)
-        loss = lamb*sinkhorn._KL(alpha, beta, gamma_it) - torch.sum(gamma_it*dual_var)
+        loss = lamb*sinkhorn._KL(alpha, beta, gamma_it) - torch.sum(gamma_it*dual_var) # acurate loss
         loss_profile.append(loss.cpu().detach().numpy())    
         net.gamma = gamma_it
         iterations += 1
@@ -215,6 +214,9 @@ def train_dc(net, y, beta, lamb = 1, max_time=10, cost=sinkhorn._squared_distanc
     return loss_profile
 
 def relax_primal_loss(primal_var, dual_var, beta, lamb):
+    """
+    Loss to minimize in the primal iteration of the DCA algorithm
+    """
     alpha = torch.sum(primal_var, 1)
     g = lamb*sinkhorn._KL(alpha, beta, primal_var)
     h_relax = torch.sum(primal_var*dual_var)
@@ -222,7 +224,8 @@ def relax_primal_loss(primal_var, dual_var, beta, lamb):
 
 def solve_relaxed_primal(dual_var, beta, gamma, lamb=1, max_iter=100, learning_rate=0.01, err_threshold=1e-4, return_losses=False, debug=False, device="cpu"):
     """
-    Find an approximated solution of inf(lambda KL(gamma, gamma_1 \times beta) - <gamma, dual_var>) in the feasible set of gamma using projected gradient
+    Find an approximated solution of inf(lambda KL(gamma, gamma_1 \times beta) - <gamma, dual_var>) in the feasible set of gamma using projected gradient.
+    Primal iteration of the DCA algorithm.
     """
     
     prim_var = gamma.clone()

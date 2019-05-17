@@ -9,63 +9,63 @@ from train import simplex_proj
 
 def LazySecondPriceLoss(net, input, y, size_batch,nb_opponents=1, distribution="exponential", rp=0, eta=1000, device="cpu"):
   """
-  Estimate the loss for training. When precisely evaluating the loss, set rp to 0 and eta to 100.
+  Estimate the loss for training. When precisely evaluating the loss, set rp to 0 and eta to 10000.
   """
   _, output = net(input)
   output_grad = []
-  true_val = input@y.view(1,-1)
+  true_val = input@y.view(1,-1) # accurate value
   loss = torch.ones(net.nactions, y.size(0), device=device)  # we need the loss to be positive for stability with small lambda
   for i, out in enumerate(output):
       grad = torch.autograd.grad(torch.sum(out),input,retain_graph=True, create_graph=True)[0].flatten()
-      virtual = out - grad
+      virtual = out - grad # virtual value
       indicator = torch.sigmoid(eta*(virtual-rp))
       winning = torch.min(out, torch.ones(out.size())) # uniform on [0,1] adversary
       #winning = 1- torch.exp(-out) #exp 1 adversary
       if nb_opponents>1:
         winning = winning**nb_opponents # in case of several opponents; If loop to optimize autograd for one opponent
-      l = (true_val - virtual[:, None])*winning[:, None]*indicator[:, None]
+      l = (true_val - virtual[:, None])*winning[:, None]*indicator[:, None] # utility given by Nedelec et al.
       loss[i,:] -= 1/size_batch*torch.sum(l, dim=0)
 
   return loss
 
 class BidderStrategy(nn.Module):
-    def __init__(self, size_layer = 200, nactions=12, device="cpu"):
-        super().__init__()
-        self.size_layer = size_layer
-        self.nactions = nactions
+  """
+  Network simulating the strategy of a bidder
+  """
+  def __init__(self, size_layer = 200, nactions=12, device="cpu"):
+      super().__init__()
+      self.size_layer = size_layer
+      self.nactions = nactions
 
-        self.fc1 = []
-        for i in range(self.nactions):
-          self.fc1.append(nn.Linear(1, self.size_layer))
-          torch.nn.init.uniform_(self.fc1[i].bias,a=-1.0, b=1.0)
-          torch.nn.init.uniform_(self.fc1[i].weight,a=-1.0, b=2.0)
-        self.fc1 = nn.ModuleList(self.fc1)
-        
-        self.fc3 = nn.Linear(1, self.nactions, bias=False)
-        torch.nn.init.xavier_uniform_(self.fc3.weight)
+      self.fc1 = []
+      for i in range(self.nactions): # fc1[i] -> fc2[i] represents an action beta_i
+        self.fc1.append(nn.Linear(1, self.size_layer))
+        torch.nn.init.uniform_(self.fc1[i].bias,a=-1.0, b=1.0)
+        torch.nn.init.uniform_(self.fc1[i].weight,a=-1.0, b=2.0)
+      self.fc1 = nn.ModuleList(self.fc1)
+      
+      self.fc3 = nn.Linear(1, self.nactions, bias=False) # fc3 is just the parameters alpha (without hidden layer)
+      torch.nn.init.xavier_uniform_(self.fc3.weight)
 
-        self.fc2 = []
-        for i in range(self.nactions):
-          self.fc2.append(nn.Linear(self.size_layer, 1))
-          torch.nn.init.normal_(self.fc2[i].weight,mean=2*(i+1)/(self.size_layer*self.nactions), std = 0.01*(i+1)/self.nactions)
-          torch.nn.init.normal_(self.fc2[i].bias,mean=0.0, std = 0.001*(i+1)/self.nactions)
-        self.fc2 = nn.ModuleList(self.fc2)
-        self.device = device
-        self.one = torch.FloatTensor([1]).to(device)
-        self.proj = True
-
-    def forward(self, inp):
-      out = []
+      self.fc2 = []
       for i in range(self.nactions):
-        out.append(self.fc2[i](F.relu(self.fc1[i](inp))).flatten())
-      alpha = self.fc3(self.one)
-      return alpha, out
+        self.fc2.append(nn.Linear(self.size_layer, 1))
+        torch.nn.init.normal_(self.fc2[i].weight,mean=2*(i+1)/(self.size_layer*self.nactions), std = 0.01*(i+1)/self.nactions)
+        torch.nn.init.normal_(self.fc2[i].bias,mean=0.0, std = 0.001*(i+1)/self.nactions)
+      self.fc2 = nn.ModuleList(self.fc2)
+      self.device = device
+      self.one = torch.FloatTensor([1]).to(device)
+      self.proj = False
 
-    def alpha(self):
-      return F.softmax(self.fc3(self.one), dim=0)
+  def forward(self, inp):
+    out = []
+    for i in range(self.nactions):
+      out.append(self.fc2[i](F.relu(self.fc1[i](inp))).flatten()) # compute beta_i(x) for every x
+    alpha = F.softmax(self.fc3(self.one), dim=0)
+    return alpha, out
 
-    def projection(self):
-      self.fc3.weight.data = simplex_proj(self.fc3.weight.data.flatten(), device=self.device).view(-1, 1)
+  def alpha(self):
+    return F.softmax(self.fc3(self.one), dim=0) # use softmax for regularity/stability compared to projected gradient
 
 
 
@@ -81,12 +81,12 @@ def train_sinkhorn_auction(net, y, beta, lamb=1, niter_sink = 5, max_iter=1000, 
     optimizer = torch.optim.SGD(net.parameters(), lr=learning_rate, momentum=0)
     one = torch.FloatTensor([1]).to(device)
 
-    distrib = torch.distributions.Exponential(torch.tensor(1.))
+    distrib = torch.distributions.Exponential(torch.tensor(1.)) # exponential(1) distribution
 
     iterations = 0
     loss_profile = []
     while iterations<max_iter:
-      optimizer.param_groups[-1]['lr']*=0.99
+      optimizer.param_groups[-1]['lr']*=0.99 # slowly decrease the learning rate
 
       # ---------------------------
       #        Optimize over net
@@ -102,13 +102,13 @@ def train_sinkhorn_auction(net, y, beta, lamb=1, niter_sink = 5, max_iter=1000, 
 
       ###### Sinkhorn loss #########
       alpha = net.alpha()
-      loss, _ = sinkhorn.sinkhorn_loss_primal(alpha, C, beta, y, lamb, niter=niter_sink, cost="matrix", err_threshold=err_threshold, verbose=False)
-      loss.backward(one)
-      optimizer.step()
+      loss, _ = sinkhorn.sinkhorn_loss_primal(alpha, C, beta, y, lamb, niter=niter_sink, cost="matrix", err_threshold=err_threshold, verbose=False) # loss function
+      loss.backward(one) # autodiff
+      optimizer.step() # gradient step
 
       loss_profile.append(loss.cpu().detach().numpy())
 
-      # projected gradient
+      # projected gradient (if needed)
       if net.proj:
           net.projection()
 
@@ -137,7 +137,10 @@ def train_sinkhorn_auction(net, y, beta, lamb=1, niter_sink = 5, max_iter=1000, 
                   niter_sink, learning_rate, device, size_batch), ul.detach().numpy())
     return loss_profile
 
-def eval(net, y, beta, lamb=1, niter_sink = 5, err_threshold=1e-4, size_batch=2500, rp=0, eta=10000):
+def eval(net, y, beta, lamb=1, niter_sink = 5, err_threshold=1e-4, size_batch=100000, rp=0, eta=10000):
+  """
+  Evaluate the true loss by sampling with a larger batch size and removing the smoothing parameters.
+  """
   distrib = torch.distributions.Exponential(torch.tensor(1.))
   input = torch.zeros((size_batch, 1), requires_grad=True)
   samples = distrib.sample((size_batch, 1))
@@ -155,7 +158,8 @@ def eval(net, y, beta, lamb=1, niter_sink = 5, err_threshold=1e-4, size_batch=25
   return loss, gamma, C, p_loss, u_loss
 
 if __name__ == '__main__':
-  lambrange = [0.1]
+  lambrange = np.concatenate((np.linspace(0.0005, 1, 20), np.geomspace(0.0005, 1, 20)))
+  lambrange = np.sort(lambrange[1:-1])
   niter_sink = 1000 # require a large niter_sink for small values of lamb
   niter = 1000
   lr = 0.01
