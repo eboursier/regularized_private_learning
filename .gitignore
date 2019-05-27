@@ -7,3 +7,5 @@ archives/*
 figures/*
 old_code.py
 test.ipynb
+*.txt
+*.tar.gz

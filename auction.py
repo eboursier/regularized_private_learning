@@ -158,8 +158,9 @@ def eval(net, y, beta, lamb=1, niter_sink = 5, err_threshold=1e-4, size_batch=10
   return loss, gamma, C, p_loss, u_loss
 
 if __name__ == '__main__':
-  lambrange = np.concatenate((np.linspace(0.0005, 1, 20), np.geomspace(0.0005, 1, 20)))
-  lambrange = np.sort(lambrange[1:-1])
+  #lambrange = np.concatenate((np.linspace(0.0005, 1, 20), np.geomspace(0.0005, 1, 20)))
+  #lambrange = np.sort(lambrange[1:-1])
+  lambrange = [0.01]
   niter_sink = 1000 # require a large niter_sink for small values of lamb
   niter = 1000
   lr = 0.01
@@ -169,10 +170,10 @@ if __name__ == '__main__':
   nactions = 2+K
   y = torch.linspace(1./K, 1., K) # discretization of uniform distribution
   beta= torch.ones(K)/K
-  nexp = 10
+  nexp = 1
   err_threshold = 1e-3
   device = "cpu"
-  startexp = 1
+  startexp = 11
   print('Begin simulations on {}. Parameters:'.format(device))
   print('lambrange: {} to {} with {} points'.format(lambrange[0], lambrange[-1], len(lambrange)))
   print('Sinkhorn iterations: {}'.format(niter_sink))
