@@ -1,6 +1,6 @@
 # regularized_private_learning
 
-Code used for the simulations of the Paper "Private Learning and Regularized Optimal Transport".
+Code used for the simulations of the Paper "Utility/Privacy Trade-off through the lens of Optimal Transport".
 
 Parts of the code are adapted from https://github.com/audeg/Sinkhorn-GAN and https://github.com/toma5692/learning_to_bid_ICML. Credits to them.
 
