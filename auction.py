@@ -7,7 +7,7 @@ import os
 import numpy as np
 from train import simplex_proj
 
-def LazySecondPriceLoss(net, input, y, size_batch,nb_opponents=1, distribution="exponential", rp=0, eta=1000, device="cpu"):
+def LazySecondPriceLoss(net, input, y, size_batch,nb_opponents=1, distribution="exponential", rp=0, eta=1000, device="cpu", adv_type="exponential", adv_param=0.5):
   """
   Estimate the loss for training. When precisely evaluating the loss, set rp to 0 and eta to 10000.
   """
@@ -19,8 +19,10 @@ def LazySecondPriceLoss(net, input, y, size_batch,nb_opponents=1, distribution="
       grad = torch.autograd.grad(torch.sum(out),input,retain_graph=True, create_graph=True)[0].flatten()
       virtual = out - grad # virtual value
       indicator = torch.sigmoid(eta*(virtual-rp))
-      winning = torch.min(out, torch.ones(out.size())) # uniform on [0,1] adversary
-      #winning = 1- torch.exp(-out) #exp 1 adversary
+      if adv_type=="uniform":
+        winning = torch.min(out, torch.ones(out.size())) # uniform on [0,1] adversary
+      elif adv_type=="exponential":
+        winning = 1- torch.exp(-out/adv_param) #exp 1 adversary
       if nb_opponents>1:
         winning = winning**nb_opponents # in case of several opponents; If loop to optimize autograd for one opponent
       l = (true_val - virtual[:, None])*winning[:, None]*indicator[:, None] # utility given by Nedelec et al.
@@ -158,9 +160,9 @@ def eval(net, y, beta, lamb=1, niter_sink = 5, err_threshold=1e-4, size_batch=10
   return loss, gamma, C, p_loss, u_loss
 
 if __name__ == '__main__':
-  #lambrange = np.concatenate((np.linspace(0.0005, 1, 20), np.geomspace(0.0005, 1, 20)))
-  #lambrange = np.sort(lambrange[1:-1])
-  lambrange = [0.01]
+  lambrange = np.concatenate((np.linspace(0.0005, 1, 20), np.geomspace(0.0005, 1, 20), [0.01, 0.1]))
+  lambrange = np.sort(lambrange[1:-1])
+  lambrange = [0.1]
   niter_sink = 1000 # require a large niter_sink for small values of lamb
   niter = 1000
   lr = 0.01
