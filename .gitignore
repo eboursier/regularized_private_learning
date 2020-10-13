@@ -10,4 +10,5 @@ test.ipynb
 *.txt
 *.tar.gz
 aistats_rebuttal.ipynb
+compare_sinkhorn_methods.*
 train_rebuttal.py
