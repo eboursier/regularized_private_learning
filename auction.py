@@ -6,6 +6,7 @@ import sinkhorn
 import os
 import numpy as np
 from train import simplex_proj
+from utils import *
 
 
 def LazySecondPriceLoss(net, input, y, size_batch, nb_opponents=1,
@@ -91,22 +92,49 @@ class BidderStrategy(nn.Module):
 def train_sinkhorn_auction(net, y, beta, lamb=1, niter_sink=5, max_iter=1000,
                            learning_rate=0.1, err_threshold=1e-4, experiment=0,
                            verbose=False, verbose_freq=100, device="cpu",
+                           optim='SGD', warm_restart=False,
                            distribution="exponential", size_batch=2500,
-                           differentation="automatic"):
+                           differentiation="automatic", **kwargs):
     """
     learn a discrete distribution (alpha, x) with a prior (beta, y)
-    differentation = "automatic" for AutoDiff method
-                   = "analytic"  using dual solution in the differentation
+    differentiation: "automatic" for AutoDiff method
+                    "analytic"  using dual solution in the differentiation
+    warm_restart: True if we use the 'warm restart' technique, False otherwise
+    optimizer: 'rms', 'adam' or 'SGD' for the chosen optimizer (you can add a momentum with SGD)
     """
     start_time = timeit.default_timer()
+
+    # get momentum if mentioned in argument
+    momentum = kwargs.get('momentum', 0)
+
+    # set folder name where we save results
+    momstring = "_{}".format(momentum) if momentum != 0 else ""
+    restart_string = "_warm" if warm_restart else ""
+    actionstr = "_actions{}".format(net.nactions) if (
+        net.nactions != y.size(0)+2) else ""
     if experiment != 0:
         folder = 'experiments/sinkhorn_auction/'
-        folder += '{}_lamb{}_k{}_'.format(experiment, lamb, y.size(0))
+        folder += '{}_lamb{}_k{}'.format(experiment, lamb, y.size(0))
+        folder += actionstr
         folder += '_sinkiter{}_lr{}'.format(niter_sink, learning_rate)
         folder += '_sinkhorn_{}_batch{}'.format(device, size_batch)
+        folder += '_{}_{}'.format(optim, differentiation)
+        folder += restart_string + momstring
         os.system('mkdir ' + folder)
 
-    optimizer = torch.optim.SGD(net.parameters(), lr=learning_rate, momentum=0)
+    # optimizer choice
+    if optim == "SGD":
+        optimizer = torch.optim.SGD(
+            net.parameters(), lr=learning_rate, momentum=momentum)
+    elif optim == "adam":
+        optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
+    elif optim == "rms":
+        optimizer = torch.optim.RMSprop(net.parameters(), lr=learning_rate)
+    else:
+        print('Invalid choice of optimizer.')
+        return None
+
+    # initialize
     one = torch.FloatTensor([1]).to(device)
 
     distrib = torch.distributions.Exponential(
@@ -115,8 +143,8 @@ def train_sinkhorn_auction(net, y, beta, lamb=1, niter_sink=5, max_iter=1000,
     iterations = 0
     loss_profile = []
 
-    # convergence of Sinkhorn is assumed if we use analytic differentation
-    conv = (differentation == "analytic")
+    # convergence of Sinkhorn is assumed if we use analytic differentiation
+    conv = (differentiation == "analytic")
 
     while iterations < max_iter:
         # slowly decrease the learning rate
@@ -138,13 +166,26 @@ def train_sinkhorn_auction(net, y, beta, lamb=1, niter_sink=5, max_iter=1000,
         ###### Sinkhorn loss #########
         alpha = net.alpha()
         # loss function
-        loss, _ = sinkhorn.sinkhorn_loss_primal(alpha, C, beta, y, lamb,
-                                                niter=niter_sink,
-                                                cost="matrix",
-                                                err_threshold=err_threshold,
-                                                verbose=False,
-                                                convergence=conv)
-        loss.backward(one)  # autodiff
+        if iterations == 0:  # cannot use previous u and v
+            z = sinkhorn.sinkhorn_loss_primal(alpha, C, beta, y, lamb,
+                                              niter=niter_sink,
+                                              cost="matrix",
+                                              err_threshold=err_threshold,
+                                              verbose=False,
+                                              convergence=conv,
+                                              warm_restart=warm_restart)
+        else:  # use previous u and v (if warm restart)
+            z = sinkhorn.sinkhorn_loss_primal(alpha, C, beta, y, lamb,
+                                              niter=niter_sink,
+                                              cost="matrix",
+                                              err_threshold=err_threshold,
+                                              verbose=False,
+                                              convergence=conv,
+                                              warm_restart=warm_restart,
+                                              u=u, v=v)
+
+        loss, _, u, v = z
+        loss.backward(one)  # backpropagate (if needed)
         optimizer.step()  # gradient step
 
         loss_profile.append(loss.cpu().detach().numpy())
@@ -164,7 +205,8 @@ def train_sinkhorn_auction(net, y, beta, lamb=1, niter_sink=5, max_iter=1000,
     if verbose:
         t_expe = (timeit.default_timer()-start_time)
         print('done in {0} s'.format(t_expe))
-    if experiment != 0:
+
+    if experiment != 0: # save results
         # save data
         torch.save(net, folder+'/network')
         np.save(folder+'/losses.npy', loss_profile)
@@ -191,7 +233,7 @@ def eval(net, y, beta, lamb=1, niter_sink=5, err_threshold=1e-4,
 
     ###### Sinkhorn loss #########
     alpha = net.alpha()
-    _, gamma = sinkhorn.sinkhorn_loss_primal(
+    _, gamma, _, _ = sinkhorn.sinkhorn_loss_primal(
         alpha, C, beta, y, lamb, niter=niter_sink,
         cost="matrix", err_threshold=err_threshold, verbose=False)
     true_alpha = torch.sum(gamma, dim=1)
@@ -202,43 +244,65 @@ def eval(net, y, beta, lamb=1, niter_sink=5, err_threshold=1e-4,
 
 
 if __name__ == '__main__':
+    # choice of parameters
     lambrange = np.concatenate(
         (np.linspace(0.0005, 1, 20), np.geomspace(0.0005, 1, 20), [0.01, 0.1]))
-    lambrange = np.sort(lambrange[1:-1])
-    lambrange = [0.1]
+    lambrange = np.sort(lambrange[1:-1])  # values of lambda to test
+    #lambrange = [0.1]
     niter_sink = 1000  # require a large niter_sink for small values of lamb
-    niter = 1000
-    lr = 0.01
-    batch = 1000
-    size_layer = 100
-    K = 10
-    nactions = 2+K
+    niter = 400  # number of optimization steps
+    lr = 1e-4 # learning rate
+    batch = 1000  # size of batch when estimating the loss (Monte Carlo method)
+    size_layer = 100  # number of neurons to parameterize a single bid function
+    K = 10  # number of types
+    nactions = K+2  # number of actions (bid functions)
     y = torch.linspace(1./K, 1., K)  # discretization of uniform distribution
-    beta = torch.ones(K)/K
-    nexp = 1
-    err_threshold = 1e-3
-    device = "cpu"
-    startexp = 11
-    differentation = "automatic"
+    beta = torch.ones(K)/K  # distribution of type (uniform here)
+    nexp = 20 # number of instances to run
+    err_threshold = 1e-3  # convergence threshold for early stop in sinkhorn
+    device = "cpu"  # device to perform computations (cpu or gpu)
+    startexp = 1  # id of first experiment (default=1)
+    differentiation = "analytic"  # analytic or automatic differentiation
+    optim = "rms"  # rms algo to use (rms, adam or SGD)
+    warm_restart = True  # whether we use warm restart technique
+    momentum = 0  # value of momentum (if using SGD, to get AGD)
+
+    restart_string = "_warm" if warm_restart else ""
+    momstring = "_mom{}".format(momentum) if optim == "SGD" else ""
+    actionstr = '_actions{}'.format(nactions) if nactions != (K+2) else ""
+
     # print all parameters in console
     print('Begin simulations on {}. Parameters:'.format(device))
     print('lambrange: {} to {} with {} points'.format(
         lambrange[0], lambrange[-1], len(lambrange)))
     print('Sinkhorn iterations: {}'.format(niter_sink))
     print('Descent iterations: {}'.format(niter))
-    print('Learning_rate: {}'.format(lr))
     print('Batch size: {}'.format(batch))
     print('Layer size: {}'.format(size_layer))
     print('K: {}'.format(K))
+    print('Number of actions: {}'.format(nactions))
     print('Number of experiments: {}'.format(nexp))
-    print('Differentation: {}'.format(differentation))
+    print('Optimization: {}'.format(optim.upper()))
+    print('Learning rate: {}'.format(lr))
+    if optim == "SGD":
+        print('Momentum: {}'.format(momentum))
+    print('Differentiation: {}'.format(differentiation))
+    if warm_restart:
+        print('Warm restart.')
     for lamb in lambrange:
         for exp in range(startexp, nexp+startexp):
+            folder = 'experiments/sinkhorn_auction/'
+            folder += '{}_lamb{}_k{}'.format(exp, lamb, y.size(0))
+            folder += actionstr
+            folder += '_sinkiter{}_lr{}'.format(niter_sink, lr)
+            folder += '_sinkhorn_{}_batch{}'.format(device, batch)
+            folder += '_{}_{}'.format(optim, differentiation)
+            folder += restart_string + momstring
             p = os.path.isfile(folder+'/eval_utility_loss.npy')
             if not(p):
                 printf('Simulate for lambda={}'.format(lamb))
                 print('experiment {}'.format(exp))
-                net = BidderStrategy(size_layer=100, nactions=nactions)
+                net = BidderStrategy(size_layer=size_layer, nactions=nactions)
                 if net.proj:
                     net.projection()
                 train_sinkhorn_auction(net, y, beta, lamb=lamb,
@@ -248,4 +312,7 @@ if __name__ == '__main__':
                                        err_threshold=err_threshold,
                                        verbose_freq=100,
                                        size_batch=batch, experiment=exp,
-                                       differentation=differentation)
+                                       differentiation=differentiation,
+                                       optim=optim,
+                                       warm_restart=warm_restart,
+                                       momentum=momentum)

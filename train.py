@@ -46,7 +46,7 @@ def train_sinkhorn(net, y, beta, lamb=1, niter_sink=1, max_time=10,
     learn a discrete distribution (alpha, x) with a prior (beta, y)
     """
     momentum = kwargs.get('momentum', 0)
-    momstring = "_{}".format(momentum) if momentum!=0 else ""
+    momstring = "_{}".format(momentum) if momentum != 0 else ""
     restart_string = "_warm" if warm_restart else ""
     actionstr = "_actions{}".format(net.nactions) if (
         net.nactions != y.size(0)+2) else ""
@@ -58,9 +58,9 @@ def train_sinkhorn(net, y, beta, lamb=1, niter_sink=1, max_time=10,
                                                           niter_sink,
                                                           learning_rate)
     fold += '_sinkhorn_{}_{}_{}{}{}'.format(device, optim,
-                                             differentiation,
-                                             momstring,
-                                             restart_string)
+                                            differentiation,
+                                            momstring,
+                                            restart_string)
     if experiment != 0:
         os.system('mkdir experiments/sinkhorn/' + fold)
 
@@ -197,7 +197,7 @@ def train_descent(net, y, beta, lamb=1, max_time=10,
     learn a discrete distribution (gamma, x) with a prior (beta, y) using gradient descent on (gamma, x). Similar structure than train_sinkhorn
     """
     momentum = kwargs.get('momentum', 0)
-    momstring = "_{}".format(momentum) if momentum!=0 else ""
+    momstring = "_{}".format(momentum) if momentum != 0 else ""
     actionstr = "_actions{}".format(net.nactions) if (
         net.nactions != y.size(0)+2) else ""
 
@@ -282,7 +282,7 @@ def train_dc(net, y, beta, lamb=1, max_time=10, err_threshold=1e-4,
     """
     actionstr = "_actions{}".format(net.nactions) if (
         net.nactions != y.size(0)+2) else ""
-    
+
     fold = '{}_lamb{}{}_k{}_dim{}_dualiter{}_lr{}_dc_{}'.format(
         experiment, lamb, actionstr, y.size(0), y.size(1),
         dual_iter, learning_rate, device)

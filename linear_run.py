@@ -20,7 +20,7 @@ def init_weights(m):
         if m.bias:
             m.bias.data.fill_(0.01)
 
-# we define pytorch networks so we can use automatic differentation,
+# we define pytorch networks so we can use automatic differentiation,
 # but they only have a single layer. So they are not really networks.
 
 
@@ -148,13 +148,19 @@ if __name__ == '__main__':
 
     # Sinkhorn parameters to try
     # (sinkiter, learningrate, optimizer, differentiation, warm_restart)
-    sinkparams = [(5, 1e-1, "SGD", "analytic", True),
-                  (5, 1e-2, "adam", "analytic", False),
-                  (5, 1e-2, "rms", "analytic", False),
-                  (5, 1e-2, "adam", "automatic", False),
-                  (5, 1e-2, "rms", "automatic", False),
-                  (5, 1e-2, "adam", "analytic", True),
-                  (5, 1e-2, "rms", "analytic", True)]
+    sinkparams = [
+        #(5, 1e-1, "SGD", "analytic", True, 1),
+        #(5, 1e-2, "adam", "analytic", False, 1),
+        #(5, 1e-2, "rms", "analytic", False, 1),
+        #(5, 1e-2, "adam", "automatic", False, 1),
+        #(5, 1e-2, "rms", "automatic", False, 1),
+        (5, 1e-2, "adam", "analytic", True, 1),
+        (5, 1e-2, "rms", "analytic", True, 1),
+        #(5, 1e-2, "rms", "analytic", True, 1.5),
+        #(5, 1e-2, "rms", "analytic", True, 2),
+        #(5, 1e-2, "rms", "analytic", True, 3),
+        #(5, 1e-2, "rms", "analytic", True, 5)
+    ]
 
     # (sinkiter, learningrate, optimizer, differentiation, warm_restart)
     sinkmomentums = [0.95]
@@ -173,13 +179,13 @@ if __name__ == '__main__':
         os.system('mkdir experiments/type_data_K{0}_dim{1}'.format(K, dim))
 
         # Simulate Sinkhorn
-        for sinkiter, sinklr, optim, diff, warm_restart in sinkparams:
+        for sinkiter, sinklr, optim, diff, warm_restart, actmult in sinkparams:
+            nactions = np.int((K+2)*actmult)
             moms = sinkmomentums if optim == "SGD" else [0]
             restart_string = "_warm" if warm_restart else ""
-            nactions = K+2
             for exp in range(expstart, expstart+nexp):
                 for mom in moms:
-                    momstring = "_{}".format(mom) if mom!=0 else ""
+                    momstring = "_{}".format(mom) if mom != 0 else ""
                     # generate prior which will be the same for all different
                     # optimization schemes (but will change in different runs)
                     yfile = 'type_data_K{}_dim{}/y_{}.npy'.format(K, dim, exp)
@@ -249,7 +255,7 @@ if __name__ == '__main__':
             nactions = K+2
             if lamb == lambd:  # different learning rates for different lamb
                 for mom in moms:
-                    momstring = "_{}".format(mom) if mom!=0 else ""
+                    momstring = "_{}".format(mom) if mom != 0 else ""
                     for exp in range(expstart, expstart+nexp):
                         yfile = 'type_data_K{}_dim{}/y_{}.npy'.format(
                             K, dim, exp)
@@ -262,7 +268,7 @@ if __name__ == '__main__':
                         desc_fold = 'experiments/descent/{}_lamb{}'.format(
                             exp, lamb)
 
-                        if nactions!= K+2:
+                        if nactions != K+2:
                             desc_fold += '_actions{}'.format(nactions)
 
                         desc_fold += '_k{}_dim{}_lr{}'.format(
@@ -278,10 +284,11 @@ if __name__ == '__main__':
                             # Descent experiment
                             print_params(algo='Descent', exp=exp,
                                          descentlr=descentlr, lamb=lamb,
-                                         dim=dim, K=K, 
+                                         dim=dim, K=K,
                                          nactions=nactions, optim=optim,
                                          momentum=mom)
-                            net = DescentNet(nactions, dim, K, beta, device=dev)
+                            net = DescentNet(nactions, dim, K,
+                                             beta, device=dev)
 
                             if dev != "cpu":
                                 net.to(dev)
@@ -310,7 +317,7 @@ if __name__ == '__main__':
 
                 if nactions != K+2:
                     dc_fold += '_actions{}'.format(nactions)
-                    
+
                 dc_fold += '_k{}_dim{}_dualiter{}'.format(K, dim, dcdualiter)
                 dc_fold += '_lr{}_dc_{}/'.format(dclr, dev)
                 p = os.path.isfile(dc_fold+'losses.npy')
@@ -321,7 +328,8 @@ if __name__ == '__main__':
 
                     # DC experiment
                     print_params(algo='DC', exp=exp, dcdualiter=dcdualiter,
-                                 dclr=dclr, lamb=lamb, dim=dim, K=K, nactions=nactions)
+                                 dclr=dclr, lamb=lamb, dim=dim, K=K,
+                                 nactions=nactions)
                     net = DCNet(nactions, dim, y, device=dev)
 
                     if dev != "cpu":
